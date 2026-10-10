@@ -1,18 +1,22 @@
-# Using latest base image  from DockerHub
-FROM python:latest
+# Using a slim Python base image from Docker Hub
+FROM python:3.12-slim
 
-#Creating working directory inside container#
+# Prevent Python from writing .pyc files and keep logs unbuffered
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Create working directory inside container
 WORKDIR /app
 
-#Copy source code into working directory inside container
-COPY . /app
+# Install dependencies first for better Docker layer caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-#Install flask inside container
-RUN pip install -r requirements.txt
+# Copy source code into working directory inside container
+COPY . .
 
-#Expose container port
-EXPOSE 8080
+# Expose Flask app port
+EXPOSE 5002
 
-#Start flask app
-ENTRYPOINT ["python"]
-CMD ["app-sqs.py"]
+# Start Flask app
+CMD ["python", "app-sqs.py"]

@@ -1,68 +1,36 @@
-name: Terraform Deployment
+name: Deploy Flask App 2 to ECS
 
 on:
   push:
-    branches: [ "main" ]
-
+    branches: [ "coaching18-app", "main" ]
+    paths:
+      - 'flask-app2/**'
+      - '.github/workflows/SQS.yaml'
+  workflow_dispatch:
 
 permissions:
-  id-token: write       # Required for OIDC
-  contents: read        # To read repo content
+  id-token: write
+  contents: read
 
 jobs:
-  CICD:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v7
-   
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6
-      with:
-        role-to-assume: ${{ vars.OIDC_ROLE }}
-        aws-region: ${{ vars.AWS_REGION }}
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
-   
-    - name: Terraform Init
-      run: terraform init
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
 
-<<<<<<< Updated upstream
-    - name: Terraform Plan
-      run: terraform plan
-   
-    - name: Terraform Apply
-      run: terraform apply --auto-approve
-=======
-      - name: Install dependencies
+      - name: Install Dependencies & Test
+        working-directory: ./flask-app2
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest flake8 boto3
-
-      - name: Lint Code
-        run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-
-      - name: Run Tests
-        run: |
-          pytest
-
-      - name: Build Docker Image
-        run: |
-          docker build -t sqs-flask-app:${{ github.sha }} .
-
-  cd-sqs-service:
-    name: CD - SQS App Deployment
-    needs: ci-sqs-service
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.txt ]; then pytest; fi
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -75,36 +43,32 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push to ECR
+      - name: Build and Push Docker Image to ECR
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: sqs-flask-app-repo # Replace with your SQS service ECR repo name
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $ECR_REGISTRY/flask-app2-repo:$IMAGE_TAG ./flask-app2
+          docker push $ECR_REGISTRY/flask-app2-repo:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/flask-app2-repo:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Download ECS Task Definition
         run: |
-          aws ecs describe-task-definition --task-definition sqs-service-task-def --query taskDefinition > task-definition.json
+          aws ecs describe-task-definition --task-definition flask-app2-task-def --query taskDefinition > task-definition.json
 
       - name: Update Task Definition Image
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: sqs-app-container # Must match container name in task definition
+          container-name: flask-app2-container
           image: ${{ steps.build-image.outputs.image }}
 
-      - name: Deploy to ECS Service
+      - name: Deploy to Amazon ECS Service
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: sqs-flask-ecs-service # Replace with your SQS service ECS service name
+          service: flask-app2-ecs-service
           cluster: ecs-cluster-name
           wait-for-service-stability: true
-- name: Install dependencies
-  run: pip install -r path/to/requirements.txt
->>>>>>> Stashed changes
